@@ -6,7 +6,8 @@
 
 void OrderBook::addOrder(const Order& order) {
     Order incoming = order;
-    
+    removeExpiredOrders(bids);
+    removeExpiredOrders(asks);
     // Check FOK orders can be fully filled first
     if (incoming.getType() == OrderType::FillOrKill && !canFillOrder(incoming)) {
         return;  // Reject FOK if can't fully fill
@@ -88,6 +89,41 @@ void OrderBook::cancelOrder(int orderId) {
     }
 
     orderIndex.erase(orderId);
+}
+
+void OrderBook::removeExpiredOrders(PriceMap& side) {
+    for (auto it = side.begin(); it != side.end();) {
+        auto& orders = it->second;
+        orders.erase(
+            std::remove_if(orders.begin(), orders.end(),
+                [this](const Order& o) { 
+                    if (isOrderExpired(o)) {
+                        orderIndex.erase(o.getId());
+                        return true;
+                    }
+                    return false;
+                }
+            ),
+            orders.end()
+        );
+        
+        if (orders.empty()) {
+            it = side.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+bool OrderBook::isOrderExpired(const Order& order) const {
+    if (order.getType() != OrderType::GoodForDay) {
+        return false;
+    }
+    
+    // Check if more than 24 hours have passed since order timestamp
+    int64_t now = currentTimestamp();
+    constexpr int64_t DAY_IN_NANOS = 24LL * 60LL * 60LL * 1000000000LL;
+    return (now - order.getTimestamp()) > DAY_IN_NANOS;
 }
 
 void OrderBook::printBook(int depth) const {

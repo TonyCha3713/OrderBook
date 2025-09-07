@@ -43,6 +43,8 @@ private:
 
     inline void executeMatch(Order& incoming, Order& resting);
     bool canFillOrder(const Order& order) const;
+    bool isOrderExpired(const Order& order) const;
+    void removeExpiredOrders(PriceMap& side);
     void matchBids(Order& order);
     void matchAsks(Order& order);
 

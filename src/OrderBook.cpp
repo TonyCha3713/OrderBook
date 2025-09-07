@@ -3,6 +3,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <fstream>
 
 void OrderBook::addOrder(const Order& order) {
     Order incoming = order;
@@ -239,4 +240,104 @@ inline void OrderBook::executeMatch(Order& incoming, Order& resting) {
         tradeQty,
         currentTimestamp()
     });
+}
+
+void OrderBook::saveOrdersToFile(const std::string& filename) const {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file for writing: " << filename << std::endl;
+        return;
+    }
+
+    // Write header
+    file << "OrderID,Type,Side,Price,Quantity,Remaining,Timestamp\n";
+
+    // Save all orders from bids
+    for (const auto& [price, orders] : bids) {
+        for (const auto& order : orders) {
+            file << order.getId() << ","
+                 << static_cast<int>(order.getType()) << ","
+                 << static_cast<int>(order.getSide()) << ","
+                 << std::fixed << std::setprecision(4) << order.getPrice() << ","
+                 << order.getQuantity() << ","
+                 << order.getRemaining() << ","
+                 << order.getTimestamp() << "\n";
+        }
+    }
+
+    // Save all orders from asks
+    for (const auto& [price, orders] : asks) {
+        for (const auto& order : orders) {
+            file << order.getId() << ","
+                 << static_cast<int>(order.getType()) << ","
+                 << static_cast<int>(order.getSide()) << ","
+                 << std::fixed << std::setprecision(4) << order.getPrice() << ","
+                 << order.getQuantity() << ","
+                 << order.getRemaining() << ","
+                 << order.getTimestamp() << "\n";
+        }
+    }
+
+    file.close();
+    std::cout << "Order book state saved to " << filename << std::endl;
+}
+
+void OrderBook::loadOrdersFromFile(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cout << "No existing order book file found: " << filename << std::endl;
+        return;
+    }
+
+    std::string line;
+    std::getline(file, line); // Skip header
+
+    int loadedOrders = 0;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string token;
+        std::vector<std::string> tokens;
+
+        // Parse CSV line
+        while (std::getline(iss, token, ',')) {
+            tokens.push_back(token);
+        }
+
+        if (tokens.size() != 7) {
+            std::cerr << "Invalid line format: " << line << std::endl;
+            continue;
+        }
+
+        try {
+            int id = std::stoi(tokens[0]);
+            OrderType type = static_cast<OrderType>(std::stoi(tokens[1]));
+            OrderSide side = static_cast<OrderSide>(std::stoi(tokens[2]));
+            double price = std::stod(tokens[3]);
+            int quantity = std::stoi(tokens[4]);
+            int remaining = std::stoi(tokens[5]);
+            int64_t timestamp = std::stoll(tokens[6]);
+
+            // Create order and add to book
+            Order order(id, type, side, price, quantity, timestamp);
+            order.setRemaining(remaining);
+
+            // Add to appropriate side
+            auto& bookSide = (side == OrderSide::BUY) ? bids : asks;
+            auto& priceLevel = bookSide[price];
+            
+            if (priceLevel.empty()) {
+                priceLevel.reserve(32);
+            }
+            
+            priceLevel.push_back(order);
+            orderIndex[id] = &priceLevel.back();
+            loadedOrders++;
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error parsing line: " << line << " - " << e.what() << std::endl;
+        }
+    }
+
+    file.close();
+    std::cout << "Loaded " << loadedOrders << " orders from " << filename << std::endl;
 }

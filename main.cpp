@@ -13,6 +13,11 @@ using namespace std;
 
 int main() {
     OrderServer server;
+    const std::string orderBookFile = "orderbook_state.csv";
+
+    // Load existing order book state on startup
+    std::cout << "Loading existing order book state..." << std::endl;
+    server.loadOrderBook(orderBookFile);
 
     // Start server in a separate thread
     std::thread serverThread([&server]() {
@@ -27,8 +32,15 @@ int main() {
 
     std::string input;
     while (std::getline(std::cin, input)) {
-        if (input == "quit") break;
-
+        if (input == "quit") {
+            // Save order book state and trades before exiting
+            std::cout << "Saving order book state..." << std::endl;
+            server.saveOrderBook(orderBookFile);
+            std::cout << "Saving trade logs..." << std::endl;
+            server.exportTrades("trades.csv");
+            break;
+        }
+        
         try {
             std::istringstream iss(input);
             std::string typeStr, sideStr;

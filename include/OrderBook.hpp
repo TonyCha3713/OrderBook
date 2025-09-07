@@ -24,6 +24,8 @@ public:
     void addOrder(const Order& order);
     void cancelOrder(int orderId);
     void printBook(int depth = 5) const;
+    void saveOrdersToFile(const std::string& filename) const;
+    void loadOrdersFromFile(const std::string& filename);
     double getBestBid() const {
         return !bids.empty() ? bids.rbegin()->first : INVALID_PRICE;
     }

@@ -32,6 +32,22 @@ public:
         cv.notify_one();
     }
 
+    // Order book persistence methods
+    void saveOrderBook(const std::string& filename) {
+        std::lock_guard<std::mutex> lock(mutex);
+        book.saveOrdersToFile(filename);
+    }
+
+    void loadOrderBook(const std::string& filename) {
+        std::lock_guard<std::mutex> lock(mutex);
+        book.loadOrdersFromFile(filename);
+    }
+
+    void exportTrades(const std::string& filename) {
+        std::lock_guard<std::mutex> lock(mutex);
+        exportTradesToCSV(book.tradeLog, filename);
+    }
+
 private:
     OrderBook book;
     std::queue<OrderRequest> orderQueue;

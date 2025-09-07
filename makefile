@@ -1,7 +1,7 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra
 
-SRC = main.cpp src/OrderBook.cpp src/OrderPool.cpp src/utils.cpp
+SRC = main.cpp src/OrderBook.cpp src/OrderPool.cpp src/Server.cpp src/utils.cpp
 INC = -Iinclude
 OUT = orderbook
 

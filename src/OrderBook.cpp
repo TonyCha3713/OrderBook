@@ -7,6 +7,11 @@
 void OrderBook::addOrder(const Order& order) {
     Order incoming = order;
     
+    // Check FOK orders can be fully filled first
+    if (incoming.getType() == OrderType::FillOrKill && !canFillOrder(incoming)) {
+        return;  // Reject FOK if can't fully fill
+    }
+
     // Match order based on side
     if (incoming.getSide() == OrderSide::BUY) {
         matchAsks(incoming);
@@ -23,7 +28,7 @@ void OrderBook::addOrder(const Order& order) {
         auto& priceLevel = bookSide[incoming.getPrice()];
         
         if (priceLevel.empty()) {
-            priceLevel.reserve(32);  // Pre-allocate space for efficiency
+            priceLevel.reserve(32);
         }
         
         priceLevel.push_back(incoming);
@@ -31,10 +36,38 @@ void OrderBook::addOrder(const Order& order) {
     }
 }
 
+bool OrderBook::canFillOrder(const Order& order) const {
+    int remainingQty = order.getQuantity();
+    
+    if (order.getSide() == OrderSide::BUY) {
+        for (const auto& [price, orders] : asks) {
+            if (order.getType() != OrderType::Market && price > order.getPrice()) {
+                break;
+            }
+            for (const auto& resting : orders) {
+                remainingQty -= resting.getRemaining();
+                if (remainingQty <= 0) return true;
+            }
+        }
+    } else {
+        for (auto it = bids.rbegin(); it != bids.rend(); ++it) {
+            if (order.getType() != OrderType::Market && it->first < order.getPrice()) {
+                break;
+            }
+            for (const auto& resting : it->second) {
+                remainingQty -= resting.getRemaining();
+                if (remainingQty <= 0) return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
 void OrderBook::cancelOrder(int orderId) {
     auto it = orderIndex.find(orderId);
     if (it == orderIndex.end()) {
-        return;  // Order not found
+        return;
     }
 
     Order* order = it->second;
@@ -49,7 +82,6 @@ void OrderBook::cancelOrder(int orderId) {
             orders.end()
         );
 
-        // Remove empty price levels
         if (orders.empty()) {
             bookSide.erase(priceIt);
         }
@@ -60,40 +92,55 @@ void OrderBook::cancelOrder(int orderId) {
 
 void OrderBook::printBook(int depth) const {
     std::cout << "\nOrderBook Snapshot:\n";
-    std::cout << std::setfill('=') << std::setw(40) << "\n" << std::setfill(' ');
+    std::cout << std::setfill('=') << std::setw(60) << "\n" << std::setfill(' ');
     
-    // Print asks (in ascending order)
-    int levelCount = 0;
-    for (auto it = asks.begin(); it != asks.end() && levelCount < depth; ++it, ++levelCount) {
-        int totalQty = 0;
-        for (const auto& order : it->second) {
-            totalQty += order.getRemaining();
-        }
-        std::cout << "ASK: " << std::setw(10) << std::fixed << std::setprecision(2) 
-                  << it->first << " x " << std::setw(6) << totalQty << "\n";
-    }
+    std::cout << std::setw(25) << "BIDS" << " | " << std::setw(25) << "ASKS\n";
+    std::cout << std::setfill('-') << std::setw(60) << "\n" << std::setfill(' ');
 
-    std::cout << std::setfill('-') << std::setw(40) << "\n" << std::setfill(' ');
+    auto bidIt = bids.rbegin();
+    auto askIt = asks.begin();
 
-    // Print bids (in descending order)
-    levelCount = 0;
-    for (auto it = bids.rbegin(); it != bids.rend() && levelCount < depth; ++it, ++levelCount) {
-        int totalQty = 0;
-        for (const auto& order : it->second) {
-            totalQty += order.getRemaining();
+    for (int i = 0; i < depth; ++i) {
+        // Print bid side
+        if (bidIt != bids.rend()) {
+            int bidQty = 0;
+            for (const auto& order : bidIt->second) {
+                bidQty += order.getRemaining();
+            }
+            std::cout << std::fixed << std::setprecision(2) 
+                     << std::setw(8) << bidQty << " @ " 
+                     << std::setw(8) << bidIt->first;
+            ++bidIt;
+        } else {
+            std::cout << std::setw(20) << "";
         }
-        std::cout << "BID: " << std::setw(10) << std::fixed << std::setprecision(2) 
-                  << it->first << " x " << std::setw(6) << totalQty << "\n";
+
+        std::cout << " | ";
+
+        // Print ask side
+        if (askIt != asks.end()) {
+            int askQty = 0;
+            for (const auto& order : askIt->second) {
+                askQty += order.getRemaining();
+            }
+            std::cout << std::fixed << std::setprecision(2)
+                     << std::setw(8) << askQty << " @ " 
+                     << std::setw(8) << askIt->first;
+            ++askIt;
+        } else {
+            std::cout << std::setw(20) << "";
+        }
+        std::cout << "\n";
     }
     
-    std::cout << std::setfill('=') << std::setw(40) << "\n" << std::setfill(' ');
+    std::cout << std::setfill('=') << std::setw(60) << "\n" << std::setfill(' ');
 }
 
 void OrderBook::matchBids(Order& order) {
     auto it = bids.rbegin();
     while (it != bids.rend() && order.getRemaining() > 0) {
         if (order.getType() != OrderType::Market && it->first < order.getPrice()) {
-            break;  // Price not matched for limit orders
+            break;
         }
 
         auto& orders = it->second;
@@ -102,7 +149,6 @@ void OrderBook::matchBids(Order& order) {
             executeMatch(order, resting);
         }
 
-        // Remove filled orders and empty price levels
         orders.erase(
             std::remove_if(orders.begin(), orders.end(),
                 [](const Order& o) { return o.getRemaining() == 0; }),
@@ -121,7 +167,7 @@ void OrderBook::matchAsks(Order& order) {
     auto it = asks.begin();
     while (it != asks.end() && order.getRemaining() > 0) {
         if (order.getType() != OrderType::Market && it->first > order.getPrice()) {
-            break;  // Price not matched for limit orders
+            break;
         }
 
         auto& orders = it->second;
@@ -130,7 +176,6 @@ void OrderBook::matchAsks(Order& order) {
             executeMatch(order, resting);
         }
 
-        // Remove filled orders and empty price levels
         orders.erase(
             std::remove_if(orders.begin(), orders.end(),
                 [](const Order& o) { return o.getRemaining() == 0; }),

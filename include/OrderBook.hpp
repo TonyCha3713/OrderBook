@@ -42,6 +42,7 @@ private:
     unordered_map<int, Order*> orderIndex;
 
     inline void executeMatch(Order& incoming, Order& resting);
+    bool canFillOrder(const Order& order) const;
     void matchBids(Order& order);
     void matchAsks(Order& order);
 

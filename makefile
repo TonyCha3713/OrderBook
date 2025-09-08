@@ -3,11 +3,9 @@ CXXFLAGS = -std=c++17 -Wall -Wextra -O3 -march=native -flto -funroll-loops -ffas
 
 SRC = main.cpp src/OrderBook.cpp src/OrderPool.cpp src/Server.cpp src/utils.cpp
 BENCH_SRC = benchmark.cpp src/OrderBook.cpp src/OrderPool.cpp src/utils.cpp
-MICRO_SRC = micro_benchmark.cpp src/OrderBook.cpp src/OrderPool.cpp src/utils.cpp
 INC = -Iinclude
 OUT = orderbook
 BENCH_OUT = benchmark
-MICRO_OUT = micro_benchmark
 
 all: $(OUT) $(BENCH_OUT) $(MICRO_OUT)
 

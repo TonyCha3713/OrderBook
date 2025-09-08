@@ -28,6 +28,10 @@ private:
         double maxLatencyUs;
         int tradesExecuted;
         double throughputOrdersPerSec;
+        double p50Us;
+        double p95Us;
+        double p99Us;
+        double stdDevUs;
     };
     
     vector<BenchmarkResult> results;
@@ -39,6 +43,29 @@ public:
     inline double getCurrentTimeUs() {
         auto now = chrono::high_resolution_clock::now();
         return chrono::duration<double, micro>(now.time_since_epoch()).count();
+    }
+    
+    // Calculate percentiles and statistics from latency data
+    void calculateStatistics(const vector<double>& latencies, double& p50, double& p95, double& p99, double& stdDev) {
+        if (latencies.empty()) {
+            p50 = p95 = p99 = stdDev = 0.0;
+            return;
+        }
+        
+        vector<double> sortedLatencies = latencies;
+        sort(sortedLatencies.begin(), sortedLatencies.end());
+        
+        p50 = sortedLatencies[static_cast<size_t>(sortedLatencies.size() * 0.5)];
+        p95 = sortedLatencies[static_cast<size_t>(sortedLatencies.size() * 0.95)];
+        p99 = sortedLatencies[static_cast<size_t>(sortedLatencies.size() * 0.99)];
+        
+        // Calculate standard deviation
+        double mean = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+        double variance = 0.0;
+        for (double latency : latencies) {
+            variance += (latency - mean) * (latency - mean);
+        }
+        stdDev = sqrt(variance / latencies.size());
     }
     
     // Generate random orders for testing
@@ -58,6 +85,425 @@ public:
             orders.emplace_back(i + 1, type, side, price, quantity, timestamp);
         }
         return orders;
+    }
+    
+    // Micro-benchmark: Single order latency test
+    BenchmarkResult testSingleOrderLatency() {
+        cout << "=== MICRO-BENCHMARK: Single Order Latency Test ===" << endl;
+        
+        OrderBook testBook;
+        vector<double> latencies;
+        const int iterations = 10000;
+        
+        uniform_real_distribution<double> priceDist(100.0, 110.0);
+        uniform_int_distribution<int> qtyDist(1, 100);
+        
+        for (int i = 0; i < iterations; ++i) {
+            double price = priceDist(rng);
+            int quantity = qtyDist(rng);
+            OrderSide side = (i % 2 == 0) ? OrderSide::BUY : OrderSide::SELL;
+            
+            Order order(i + 1, OrderType::GoodTillCancel, side, price, quantity, getCurrentTimeUs());
+            
+            double start = getCurrentTimeUs();
+            testBook.addOrder(order);
+            double end = getCurrentTimeUs();
+            
+            latencies.push_back(end - start);
+        }
+        
+        // Calculate statistics
+        double avg = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+        auto minMax = minmax_element(latencies.begin(), latencies.end());
+        double p50, p95, p99, stdDev;
+        calculateStatistics(latencies, p50, p95, p99, stdDev);
+        
+        cout << "Iterations: " << iterations << endl;
+        cout << "Average: " << fixed << setprecision(2) << avg << " μs" << endl;
+        cout << "Min: " << fixed << setprecision(2) << *minMax.first << " μs" << endl;
+        cout << "Max: " << fixed << setprecision(2) << *minMax.second << " μs" << endl;
+        cout << "P50: " << fixed << setprecision(2) << p50 << " μs" << endl;
+        cout << "P95: " << fixed << setprecision(2) << p95 << " μs" << endl;
+        cout << "P99: " << fixed << setprecision(2) << p99 << " μs" << endl;
+        cout << "StdDev: " << fixed << setprecision(2) << stdDev << " μs" << endl;
+        cout << "10μs Target: " << (avg < 10.0 ? "✅ PASSED" : "❌ FAILED") << endl;
+        cout << endl;
+        
+        BenchmarkResult result = {
+            "Single Order Latency",
+            iterations,
+            0.0, // Will be calculated properly
+            avg,
+            *minMax.first,
+            *minMax.second,
+            static_cast<int>(testBook.tradeLog.size()),
+            0.0, // Will be calculated properly
+            p50,
+            p95,
+            p99,
+            stdDev
+        };
+        
+        results.push_back(result);
+        return result;
+    }
+    
+    // Micro-benchmark: Order type comparison
+    void testOrderTypeComparison() {
+        cout << "=== MICRO-BENCHMARK: Order Type Performance Comparison ===" << endl;
+        
+        vector<OrderType> types = {
+            OrderType::GoodTillCancel,
+            OrderType::FillOrKill,
+            OrderType::FillAndKill,
+            OrderType::GoodForDay,
+            OrderType::Market
+        };
+        
+        vector<string> typeNames = {
+            "GTC", "FOK", "FAK", "GTD", "Market"
+        };
+        
+        const int iterations = 1000;
+        
+        for (size_t i = 0; i < types.size(); ++i) {
+            OrderBook testBook;
+            vector<double> latencies;
+            
+            uniform_real_distribution<double> priceDist(100.0, 110.0);
+            uniform_int_distribution<int> qtyDist(1, 100);
+            
+            double startTime = getCurrentTimeUs();
+            
+            for (int j = 0; j < iterations; ++j) {
+                // Market orders must have zero price
+                double price = (types[i] == OrderType::Market) ? 0.0 : priceDist(rng);
+                int quantity = qtyDist(rng);
+                OrderSide side = (j % 2 == 0) ? OrderSide::BUY : OrderSide::SELL;
+                
+                Order order(j + 1, types[i], side, price, quantity, getCurrentTimeUs());
+                
+                double orderStart = getCurrentTimeUs();
+                testBook.addOrder(order);
+                double orderEnd = getCurrentTimeUs();
+                
+                latencies.push_back(orderEnd - orderStart);
+            }
+            
+            double endTime = getCurrentTimeUs();
+            double totalTime = endTime - startTime;
+            
+            double avg = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+            auto minMax = minmax_element(latencies.begin(), latencies.end());
+            double p50, p95, p99, stdDev;
+            calculateStatistics(latencies, p50, p95, p99, stdDev);
+            
+            cout << typeNames[i] << ": "
+                 << "avg=" << fixed << setprecision(2) << avg << "μs, "
+                 << "min=" << fixed << setprecision(2) << *minMax.first << "μs, "
+                 << "max=" << fixed << setprecision(2) << *minMax.second << "μs, "
+                 << "trades=" << static_cast<int>(testBook.tradeLog.size()) << endl;
+            
+            BenchmarkResult result = {
+                typeNames[i] + " Micro-Benchmark",
+                iterations,
+                totalTime / 1000.0,
+                avg,
+                *minMax.first,
+                *minMax.second,
+                static_cast<int>(testBook.tradeLog.size()),
+                (iterations * 1000000.0) / totalTime,
+                p50,
+                p95,
+                p99,
+                stdDev
+            };
+            
+            results.push_back(result);
+        }
+        cout << endl;
+    }
+    
+    // Micro-benchmark: Matching performance test
+    BenchmarkResult testMatchingPerformance() {
+        cout << "=== MICRO-BENCHMARK: Order Matching Performance Test ===" << endl;
+        
+        OrderBook testBook;
+        const int orders = 5000;
+        vector<double> latencies;
+        
+        uniform_real_distribution<double> priceDist(100.0, 102.0);  // Tight spread for more matches
+        uniform_int_distribution<int> qtyDist(1, 50);
+        
+        double startTime = getCurrentTimeUs();
+        
+        for (int i = 0; i < orders; ++i) {
+            double price = priceDist(rng);
+            int quantity = qtyDist(rng);
+            OrderSide side = (i % 2 == 0) ? OrderSide::BUY : OrderSide::SELL;
+            
+            Order order(i + 1, OrderType::GoodTillCancel, side, price, quantity, getCurrentTimeUs());
+            
+            double orderStart = getCurrentTimeUs();
+            testBook.addOrder(order);
+            double orderEnd = getCurrentTimeUs();
+            
+            latencies.push_back(orderEnd - orderStart);
+        }
+        
+        double endTime = getCurrentTimeUs();
+        double totalTime = endTime - startTime;
+        
+        double avg = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+        auto minMax = minmax_element(latencies.begin(), latencies.end());
+        double p50, p95, p99, stdDev;
+        calculateStatistics(latencies, p50, p95, p99, stdDev);
+        
+        cout << "Orders processed: " << orders << endl;
+        cout << "Trades executed: " << static_cast<int>(testBook.tradeLog.size()) << endl;
+        cout << "Match rate: " << fixed << setprecision(2) 
+             << (static_cast<double>(testBook.tradeLog.size()) / orders * 100.0) << "%" << endl;
+        cout << "Average latency: " << fixed << setprecision(2) << avg << " μs" << endl;
+        cout << "Min latency: " << fixed << setprecision(2) << *minMax.first << " μs" << endl;
+        cout << "Max latency: " << fixed << setprecision(2) << *minMax.second << " μs" << endl;
+        cout << "P99 latency: " << fixed << setprecision(2) << p99 << " μs" << endl;
+        cout << "Latency jitter (std dev): " << fixed << setprecision(2) << stdDev << " μs" << endl;
+        cout << endl;
+        
+        BenchmarkResult result = {
+            "Matching Performance",
+            orders,
+            totalTime / 1000.0,
+            avg,
+            *minMax.first,
+            *minMax.second,
+            static_cast<int>(testBook.tradeLog.size()),
+            (orders * 1000000.0) / totalTime,
+            p50,
+            p95,
+            p99,
+            stdDev
+        };
+        
+        results.push_back(result);
+        return result;
+    }
+    
+    // Load testing: Test performance under increasing load
+    void testLoadScaling() {
+        cout << "=== LOAD TESTING: Performance Under Increasing Load ===" << endl;
+        
+        vector<int> loadLevels = {100, 500, 1000, 5000, 10000, 25000, 50000};
+        
+        for (int load : loadLevels) {
+            cout << "Testing load: " << load << " orders..." << endl;
+            
+            OrderBook testBook;
+            vector<double> latencies;
+            latencies.reserve(load);
+            
+            auto orders = generateRandomOrders(load, OrderType::GoodTillCancel, 5.0);
+            
+            double startTime = getCurrentTimeUs();
+            
+            for (const auto& order : orders) {
+                double orderStart = getCurrentTimeUs();
+                testBook.addOrder(order);
+                double orderEnd = getCurrentTimeUs();
+                latencies.push_back(orderEnd - orderStart);
+            }
+            
+            double endTime = getCurrentTimeUs();
+            double totalTime = endTime - startTime;
+            
+            double avg = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+            auto minMax = minmax_element(latencies.begin(), latencies.end());
+            double p50, p95, p99, stdDev;
+            calculateStatistics(latencies, p50, p95, p99, stdDev);
+            
+            cout << "  Load " << load << ": avg=" << fixed << setprecision(2) << avg << "μs, "
+                 << "throughput=" << fixed << setprecision(0) << (load * 1000000.0) / totalTime << " ops/s, "
+                 << "trades=" << static_cast<int>(testBook.tradeLog.size()) << endl;
+            
+            BenchmarkResult result = {
+                "Load Test " + to_string(load),
+                load,
+                totalTime / 1000.0,
+                avg,
+                *minMax.first,
+                *minMax.second,
+                static_cast<int>(testBook.tradeLog.size()),
+                (load * 1000000.0) / totalTime,
+                p50,
+                p95,
+                p99,
+                stdDev
+            };
+            
+            results.push_back(result);
+        }
+        cout << endl;
+    }
+    
+    // Stress testing: Test system behavior under extreme conditions
+    void testStressConditions() {
+        cout << "=== STRESS TESTING: Extreme Conditions ===" << endl;
+        
+        // Stress test 1: Massive order book
+        cout << "Stress Test 1: Massive Order Book (100K orders)..." << endl;
+        {
+            OrderBook testBook;
+            vector<double> latencies;
+            const int stressLoad = 100000;
+            latencies.reserve(stressLoad);
+            
+            auto orders = generateRandomOrders(stressLoad, OrderType::GoodTillCancel, 20.0);
+            
+            double startTime = getCurrentTimeUs();
+            
+            for (const auto& order : orders) {
+                double orderStart = getCurrentTimeUs();
+                testBook.addOrder(order);
+                double orderEnd = getCurrentTimeUs();
+                latencies.push_back(orderEnd - orderStart);
+            }
+            
+            double endTime = getCurrentTimeUs();
+            double totalTime = endTime - startTime;
+            
+            double avg = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+            auto minMax = minmax_element(latencies.begin(), latencies.end());
+            double p50, p95, p99, stdDev;
+            calculateStatistics(latencies, p50, p95, p99, stdDev);
+            
+            cout << "  Massive Book: avg=" << fixed << setprecision(2) << avg << "μs, "
+                 << "throughput=" << fixed << setprecision(0) << (stressLoad * 1000000.0) / totalTime << " ops/s" << endl;
+            
+            BenchmarkResult result = {
+                "Stress Test - Massive Book",
+                stressLoad,
+                totalTime / 1000.0,
+                avg,
+                *minMax.first,
+                *minMax.second,
+                static_cast<int>(testBook.tradeLog.size()),
+                (stressLoad * 1000000.0) / totalTime,
+                p50,
+                p95,
+                p99,
+                stdDev
+            };
+            
+            results.push_back(result);
+        }
+        
+        // Stress test 2: High-frequency market orders
+        cout << "Stress Test 2: High-Frequency Market Orders (50K orders)..." << endl;
+        {
+            OrderBook testBook;
+            vector<double> latencies;
+            const int stressLoad = 50000;
+            latencies.reserve(stressLoad);
+            
+            auto orders = generateRandomOrders(stressLoad, OrderType::Market, 0.0);
+            
+            double startTime = getCurrentTimeUs();
+            
+            for (const auto& order : orders) {
+                double orderStart = getCurrentTimeUs();
+                testBook.addOrder(order);
+                double orderEnd = getCurrentTimeUs();
+                latencies.push_back(orderEnd - orderStart);
+            }
+            
+            double endTime = getCurrentTimeUs();
+            double totalTime = endTime - startTime;
+            
+            double avg = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+            auto minMax = minmax_element(latencies.begin(), latencies.end());
+            double p50, p95, p99, stdDev;
+            calculateStatistics(latencies, p50, p95, p99, stdDev);
+            
+            cout << "  Market Orders: avg=" << fixed << setprecision(2) << avg << "μs, "
+                 << "throughput=" << fixed << setprecision(0) << (stressLoad * 1000000.0) / totalTime << " ops/s, "
+                 << "trades=" << static_cast<int>(testBook.tradeLog.size()) << endl;
+            
+            BenchmarkResult result = {
+                "Stress Test - Market Orders",
+                stressLoad,
+                totalTime / 1000.0,
+                avg,
+                *minMax.first,
+                *minMax.second,
+                static_cast<int>(testBook.tradeLog.size()),
+                (stressLoad * 1000000.0) / totalTime,
+                p50,
+                p95,
+                p99,
+                stdDev
+            };
+            
+            results.push_back(result);
+        }
+        
+        // Stress test 3: Mixed order types under load
+        cout << "Stress Test 3: Mixed Order Types (25K orders)..." << endl;
+        {
+            OrderBook testBook;
+            vector<double> latencies;
+            const int stressLoad = 25000;
+            latencies.reserve(stressLoad);
+            
+            vector<OrderType> types = {OrderType::GoodTillCancel, OrderType::FillOrKill, 
+                                      OrderType::FillAndKill, OrderType::Market};
+            uniform_int_distribution<int> typeDist(0, types.size() - 1);
+            
+            double startTime = getCurrentTimeUs();
+            
+            for (int i = 0; i < stressLoad; ++i) {
+                OrderType type = types[typeDist(rng)];
+                double price = (type == OrderType::Market) ? 0.0 : (100.0 + (i % 100) * 0.01);
+                int quantity = 1 + (i % 1000);
+                OrderSide side = (i % 2 == 0) ? OrderSide::BUY : OrderSide::SELL;
+                
+                Order order(i + 1, type, side, price, quantity, getCurrentTimeUs());
+                
+                double orderStart = getCurrentTimeUs();
+                testBook.addOrder(order);
+                double orderEnd = getCurrentTimeUs();
+                latencies.push_back(orderEnd - orderStart);
+            }
+            
+            double endTime = getCurrentTimeUs();
+            double totalTime = endTime - startTime;
+            
+            double avg = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+            auto minMax = minmax_element(latencies.begin(), latencies.end());
+            double p50, p95, p99, stdDev;
+            calculateStatistics(latencies, p50, p95, p99, stdDev);
+            
+            cout << "  Mixed Types: avg=" << fixed << setprecision(2) << avg << "μs, "
+                 << "throughput=" << fixed << setprecision(0) << (stressLoad * 1000000.0) / totalTime << " ops/s, "
+                 << "trades=" << static_cast<int>(testBook.tradeLog.size()) << endl;
+            
+            BenchmarkResult result = {
+                "Stress Test - Mixed Types",
+                stressLoad,
+                totalTime / 1000.0,
+                avg,
+                *minMax.first,
+                *minMax.second,
+                static_cast<int>(testBook.tradeLog.size()),
+                (stressLoad * 1000000.0) / totalTime,
+                p50,
+                p95,
+                p99,
+                stdDev
+            };
+            
+            results.push_back(result);
+        }
+        cout << endl;
     }
     
     // Benchmark individual order type performance
@@ -87,6 +533,8 @@ public:
         // Calculate statistics
         auto minMax = minmax_element(latencies.begin(), latencies.end());
         double avgLatency = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+        double p50, p95, p99, stdDev;
+        calculateStatistics(latencies, p50, p95, p99, stdDev);
         
         BenchmarkResult result = {
             testName,
@@ -96,7 +544,11 @@ public:
             *minMax.first,
             *minMax.second,
             tradesExecuted,
-            (orderCount * 1000000.0) / totalTime  // Orders per second
+            (orderCount * 1000000.0) / totalTime,  // Orders per second
+            p50,
+            p95,
+            p99,
+            stdDev
         };
         
         results.push_back(result);
@@ -132,6 +584,8 @@ public:
         
         auto minMax = minmax_element(latencies.begin(), latencies.end());
         double avgLatency = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+        double p50, p95, p99, stdDev;
+        calculateStatistics(latencies, p50, p95, p99, stdDev);
         
         BenchmarkResult result = {
             "Depth Impact Test",
@@ -141,7 +595,11 @@ public:
             *minMax.first,
             *minMax.second,
             0,  // We're not counting trades for this test
-            (additionalOrders * 1000000.0) / totalTime
+            (additionalOrders * 1000000.0) / totalTime,
+            p50,
+            p95,
+            p99,
+            stdDev
         };
         
         results.push_back(result);
@@ -201,6 +659,8 @@ public:
         
         auto minMax = minmax_element(latencies.begin(), latencies.end());
         double avgLatency = accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+        double p50, p95, p99, stdDev;
+        calculateStatistics(latencies, p50, p95, p99, stdDev);
         
         BenchmarkResult result = {
             "Real Market Data",
@@ -210,7 +670,11 @@ public:
             *minMax.first,
             *minMax.second,
             static_cast<int>(book.tradeLog.size()),
-            (orderCount * 1000000.0) / totalTime
+            (orderCount * 1000000.0) / totalTime,
+            p50,
+            p95,
+            p99,
+            stdDev
         };
         
         results.push_back(result);
@@ -219,15 +683,34 @@ public:
     
     // Run comprehensive benchmark suite
     void runBenchmarkSuite() {
-        cout << "=== OrderBook Performance Benchmark Suite ===" << endl;
-        cout << "Testing various order types and scenarios..." << endl << endl;
+        cout << "=== ENHANCED ORDERBOOK PERFORMANCE BENCHMARK SUITE ===" << endl;
+        cout << "Testing micro-benchmarks, load testing, stress testing, and comprehensive scenarios..." << endl << endl;
         
         // Clear any existing state
         book = OrderBook();
         allTrades.clear();
         results.clear();
         
-        // Test different order types
+        // MICRO-BENCHMARKS
+        cout << "🔬 MICRO-BENCHMARKS" << endl;
+        cout << "===================" << endl;
+        testSingleOrderLatency();
+        testOrderTypeComparison();
+        testMatchingPerformance();
+        
+        // LOAD TESTING
+        cout << "📈 LOAD TESTING" << endl;
+        cout << "===============" << endl;
+        testLoadScaling();
+        
+        // STRESS TESTING
+        cout << "💪 STRESS TESTING" << endl;
+        cout << "=================" << endl;
+        testStressConditions();
+        
+        // COMPREHENSIVE BENCHMARKS
+        cout << "📊 COMPREHENSIVE BENCHMARKS" << endl;
+        cout << "===========================" << endl;
         benchmarkOrderType(OrderType::GoodTillCancel, 1000, "GTC Orders");
         benchmarkOrderType(OrderType::FillOrKill, 1000, "FOK Orders");
         benchmarkOrderType(OrderType::FillAndKill, 1000, "FAK Orders");
@@ -240,38 +723,46 @@ public:
         // Test with real market data
         benchmarkRealData("dataset/AAPL_cleaned.csv", 5000);
         
-        // Generate report
-        generateReport();
+        // Generate enhanced report
+        generateEnhancedReport();
     }
     
-    // Generate comprehensive performance report
-    void generateReport() {
-        cout << "\n=== PERFORMANCE BENCHMARK REPORT ===" << endl;
-        cout << setfill('=') << setw(120) << "" << setfill(' ') << endl;
+    // Generate enhanced performance report
+    void generateEnhancedReport() {
+        cout << "\n=== ENHANCED PERFORMANCE BENCHMARK REPORT ===" << endl;
+        cout << setfill('=') << setw(160) << "" << setfill(' ') << endl;
         
-        cout << left << setw(20) << "Test Name"
-             << setw(12) << "Orders"
+        cout << left << setw(25) << "Test Name"
+             << setw(10) << "Orders"
              << setw(12) << "Total(ms)"
-             << setw(12) << "Avg(μs)"
-             << setw(12) << "Min(μs)"
-             << setw(12) << "Max(μs)"
-             << setw(12) << "Trades"
+             << setw(10) << "Avg(μs)"
+             << setw(10) << "Min(μs)"
+             << setw(10) << "Max(μs)"
+             << setw(8) << "P50(μs)"
+             << setw(8) << "P95(μs)"
+             << setw(8) << "P99(μs)"
+             << setw(8) << "StdDev"
+             << setw(10) << "Trades"
              << setw(15) << "Throughput(ops/s)" << endl;
         
-        cout << setfill('-') << setw(120) << "" << setfill(' ') << endl;
+        cout << setfill('-') << setw(160) << "" << setfill(' ') << endl;
         
         for (const auto& result : results) {
-            cout << left << setw(20) << result.testName
-                 << setw(12) << result.orderCount
+            cout << left << setw(25) << result.testName
+                 << setw(10) << result.orderCount
                  << setw(12) << fixed << setprecision(2) << result.totalTimeMs
-                 << setw(12) << fixed << setprecision(2) << result.avgLatencyUs
-                 << setw(12) << fixed << setprecision(2) << result.minLatencyUs
-                 << setw(12) << fixed << setprecision(2) << result.maxLatencyUs
-                 << setw(12) << result.tradesExecuted
+                 << setw(10) << fixed << setprecision(2) << result.avgLatencyUs
+                 << setw(10) << fixed << setprecision(2) << result.minLatencyUs
+                 << setw(10) << fixed << setprecision(2) << result.maxLatencyUs
+                 << setw(8) << fixed << setprecision(2) << result.p50Us
+                 << setw(8) << fixed << setprecision(2) << result.p95Us
+                 << setw(8) << fixed << setprecision(2) << result.p99Us
+                 << setw(8) << fixed << setprecision(2) << result.stdDevUs
+                 << setw(10) << result.tradesExecuted
                  << setw(15) << fixed << setprecision(0) << result.throughputOrdersPerSec << endl;
         }
         
-        cout << setfill('=') << setw(120) << "" << setfill(' ') << endl;
+        cout << setfill('=') << setw(160) << "" << setfill(' ') << endl;
         
         // Analysis
         cout << "\n=== ANALYSIS ===" << endl;
@@ -292,9 +783,9 @@ public:
         
         // Check against 700μs target
         bool meetsTarget = all_of(results.begin(), results.end(),
-            [](const BenchmarkResult& r) { return r.avgLatencyUs < 700.0; });
+            [](const BenchmarkResult& r) { return r.avgLatencyUs < 10.0; });
         
-        cout << "700μs Target Achievement: " << (meetsTarget ? "✅ PASSED" : "❌ FAILED") << endl;
+        cout << "10μs Target Achievement: " << (meetsTarget ? "✅ PASSED" : "❌ FAILED") << endl;
         
         // Save detailed report to file
         saveReportToFile("benchmark_report.csv");
@@ -307,7 +798,7 @@ public:
             return;
         }
         
-        file << "TestName,OrderCount,TotalTimeMs,AvgLatencyUs,MinLatencyUs,MaxLatencyUs,TradesExecuted,ThroughputOpsPerSec\n";
+        file << "TestName,OrderCount,TotalTimeMs,AvgLatencyUs,MinLatencyUs,MaxLatencyUs,P50Us,P95Us,P99Us,StdDevUs,TradesExecuted,ThroughputOpsPerSec\n";
         
         for (const auto& result : results) {
             file << result.testName << ","
@@ -316,6 +807,10 @@ public:
                  << result.avgLatencyUs << ","
                  << result.minLatencyUs << ","
                  << result.maxLatencyUs << ","
+                 << result.p50Us << ","
+                 << result.p95Us << ","
+                 << result.p99Us << ","
+                 << result.stdDevUs << ","
                  << result.tradesExecuted << ","
                  << result.throughputOrdersPerSec << "\n";
         }

@@ -10,7 +10,7 @@ void OrderBook::addOrder(const Order& order) {
     removeExpiredOrders(bids);
     removeExpiredOrders(asks);
     // Check FOK orders can be fully filled first
-    if (incoming.getType() == OrderType::FillOrKill && !canFillOrder(incoming)) {
+    if (__builtin_expect(incoming.getType() == OrderType::FillOrKill, 0) && !canFillOrder(incoming)) {
         return;  // Reject FOK if can't fully fill
     }
 
@@ -22,15 +22,15 @@ void OrderBook::addOrder(const Order& order) {
     }
 
     // Add remaining quantity to book if applicable
-    if (incoming.getRemaining() > 0 && 
-        (incoming.getType() == OrderType::GoodForDay || 
-         incoming.getType() == OrderType::GoodTillCancel)) {
+    if (__builtin_expect(incoming.getRemaining() > 0, 1) && 
+        (__builtin_expect(incoming.getType() == OrderType::GoodForDay, 0) || 
+         __builtin_expect(incoming.getType() == OrderType::GoodTillCancel, 1))) {
         
         auto& bookSide = (incoming.getSide() == OrderSide::BUY) ? bids : asks;
         auto& priceLevel = bookSide[incoming.getPrice()];
         
         if (priceLevel.empty()) {
-            priceLevel.reserve(32);
+            priceLevel.reserve(PRICE_LEVEL_CAPACITY);
         }
         
         priceLevel.push_back(incoming);
@@ -38,7 +38,7 @@ void OrderBook::addOrder(const Order& order) {
     }
 }
 
-bool OrderBook::canFillOrder(const Order& order) const {
+inline bool OrderBook::canFillOrder(const Order& order) const {
     int remainingQty = order.getQuantity();
     
     if (order.getSide() == OrderSide::BUY) {
@@ -116,7 +116,7 @@ void OrderBook::removeExpiredOrders(PriceMap& side) {
     }
 }
 
-bool OrderBook::isOrderExpired(const Order& order) const {
+inline bool OrderBook::isOrderExpired(const Order& order) const {
     if (order.getType() != OrderType::GoodForDay) {
         return false;
     }
@@ -182,7 +182,7 @@ void OrderBook::matchBids(Order& order) {
 
         auto& orders = it->second;
         for (auto& resting : orders) {
-            if (order.getRemaining() == 0) break;
+            if (__builtin_expect(order.getRemaining() == 0, 0)) break;
             executeMatch(order, resting);
         }
 
@@ -209,7 +209,7 @@ void OrderBook::matchAsks(Order& order) {
 
         auto& orders = it->second;
         for (auto& resting : orders) {
-            if (order.getRemaining() == 0) break;
+            if (__builtin_expect(order.getRemaining() == 0, 0)) break;
             executeMatch(order, resting);
         }
 

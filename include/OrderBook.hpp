@@ -15,9 +15,12 @@ class OrderBook {
 public:
     static constexpr double INVALID_PRICE = -1.0;
     static constexpr size_t INITIAL_CAPACITY = 1024;
+    static constexpr size_t PRICE_LEVEL_CAPACITY = 64;  // Pre-allocate price levels
+    
     OrderBook() {
         orderIndex.reserve(INITIAL_CAPACITY);
         tradeLog.reserve(INITIAL_CAPACITY);
+        // Note: std::map doesn't support reserve(), but we can optimize the vectors inside
     }
     OrderPool orderPool;
     vector<Log> tradeLog;
@@ -42,10 +45,13 @@ private:
     PriceMap bids;
     PriceMap asks;
     unordered_map<int, Order*> orderIndex;
+    
+    // Alternative: unordered_map for better performance (but loses price ordering)
+    // using PriceMap = unordered_map<double, vector<Order>>;
 
-    inline void executeMatch(Order& incoming, Order& resting);
-    bool canFillOrder(const Order& order) const;
-    bool isOrderExpired(const Order& order) const;
+    inline void executeMatch(Order& incoming, Order& resting) __attribute__((always_inline));
+    inline bool canFillOrder(const Order& order) const __attribute__((always_inline));
+    inline bool isOrderExpired(const Order& order) const __attribute__((always_inline));
     void removeExpiredOrders(PriceMap& side);
     void matchBids(Order& order);
     void matchAsks(Order& order);

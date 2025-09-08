@@ -24,13 +24,13 @@ public:
         validate();
     }
     
-    int getId() const noexcept { return id; }
-    OrderType getType() const noexcept { return type; }
-    OrderSide getSide() const noexcept { return side; }
-    double getPrice() const noexcept { return price; }
-    int getQuantity() const noexcept { return quantity; }
-    int getRemaining() const noexcept { return remaining; }
-    int64_t getTimestamp() const noexcept { return timestamp; }
+    inline int getId() const noexcept __attribute__((always_inline)) { return id; }
+    inline OrderType getType() const noexcept __attribute__((always_inline)) { return type; }
+    inline OrderSide getSide() const noexcept __attribute__((always_inline)) { return side; }
+    inline double getPrice() const noexcept __attribute__((always_inline)) { return price; }
+    inline int getQuantity() const noexcept __attribute__((always_inline)) { return quantity; }
+    inline int getRemaining() const noexcept __attribute__((always_inline)) { return remaining; }
+    inline int64_t getTimestamp() const noexcept __attribute__((always_inline)) { return timestamp; }
 
     void setRemaining(int _remaining) {
         if (_remaining < 0 || _remaining > quantity) throw std::invalid_argument("Invalid remaining quantity");
@@ -52,8 +52,8 @@ public:
         timestamp = 0;
     }
 
-    bool isFilled() const noexcept { return remaining == 0; }
-    bool isMarketOrder() const noexcept { return type == OrderType::Market; }
+    inline bool isFilled() const noexcept __attribute__((always_inline)) { return remaining == 0; }
+    inline bool isMarketOrder() const noexcept __attribute__((always_inline)) { return type == OrderType::Market; }
 
 private:
     int id{0};

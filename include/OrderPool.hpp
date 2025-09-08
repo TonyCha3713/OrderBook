@@ -9,7 +9,7 @@ private:
     std::stack<int> freeList;
 
 public:
-    static constexpr size_t DEFAULT_CAPACITY = 1024;
+    static constexpr size_t DEFAULT_CAPACITY = 4096;  // Increased for better performance
     static constexpr size_t MAX_CAPACITY = 10000000;
 
     explicit OrderPool(size_t capacity = DEFAULT_CAPACITY);

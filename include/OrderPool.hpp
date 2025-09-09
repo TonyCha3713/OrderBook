@@ -5,11 +5,12 @@
 
 class OrderPool {
 private:
-    std::vector<Order> pool;
+    std::deque<Order> pool;
     std::stack<int> freeList;
+    void grow();
 
 public:
-    static constexpr size_t DEFAULT_CAPACITY = 4096;  // Increased for better performance
+    static constexpr size_t DEFAULT_CAPACITY = 10000;  // Increased for better performance
     static constexpr size_t MAX_CAPACITY = 10000000;
 
     explicit OrderPool(size_t capacity = DEFAULT_CAPACITY);

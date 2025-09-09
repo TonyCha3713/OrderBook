@@ -5,13 +5,23 @@
 using namespace std;
 
 void exportTradesToCSV(const vector<Log>& trades, const string& filename) {
-    ofstream file(filename);
+    bool writeHeader = false;
+    ifstream infile(filename);
+    if (!infile.good() || infile.peek() == ifstream::traits_type::eof()) {
+        writeHeader = true;
+    }
+    infile.close();
+
+    ofstream file(filename, ios::app); // Open in append mode
     if (!file.is_open()) {
         cerr << "Failed to open file: " << filename << "\n";
         return;
     }
 
-    file << "BuyOrderID,SellOrderID,Price,Quantity,Timestamp\n";
+    // Write header only if file was empty
+    if (writeHeader) {
+        file << "BuyOrderID,SellOrderID,Price,Quantity,Timestamp\n";
+    }
 
     for (const auto& t : trades) {
         file << t.buyOrderId << ","
@@ -22,5 +32,6 @@ void exportTradesToCSV(const vector<Log>& trades, const string& filename) {
     }
 
     file.close();
-    cout << "Trades exported to " << filename << "\n";
+    cout << "Trades exported (appended) to " << filename << "\n";
 }
+

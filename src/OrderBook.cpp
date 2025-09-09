@@ -6,35 +6,40 @@
 #include <fstream>
 
 void OrderBook::addOrder(const Order& order) {
-    Order incoming = order;
+    Order* incoming = orderPool.acquire();
+    if (!incoming) return;
+    *incoming = order;
     removeExpiredOrders(bids);
     removeExpiredOrders(asks);
     // Check FOK orders can be fully filled first
-    if (__builtin_expect(incoming.getType() == OrderType::FillOrKill, 0) && !canFillOrder(incoming)) {
+    if (__builtin_expect(incoming->getType() == OrderType::FillOrKill, 0) && !canFillOrder(*incoming)) {
+        orderPool.release(incoming);
         return;  // Reject FOK if can't fully fill
     }
 
     // Match order based on side
-    if (incoming.getSide() == OrderSide::BUY) {
-        matchAsks(incoming);
+    if (incoming->getSide() == OrderSide::BUY) {
+        matchAsks(*incoming);
     } else {
-        matchBids(incoming);
+        matchBids(*incoming);
     }
 
     // Add remaining quantity to book if applicable
-    if (__builtin_expect(incoming.getRemaining() > 0, 1) && 
-        (__builtin_expect(incoming.getType() == OrderType::GoodForDay, 0) || 
-         __builtin_expect(incoming.getType() == OrderType::GoodTillCancel, 1))) {
+    if (__builtin_expect(incoming->getRemaining() > 0, 1) && 
+        (__builtin_expect(incoming->getType() == OrderType::GoodForDay, 0) || 
+         __builtin_expect(incoming->getType() == OrderType::GoodTillCancel, 1))) {
         
-        auto& bookSide = (incoming.getSide() == OrderSide::BUY) ? bids : asks;
-        auto& priceLevel = bookSide[incoming.getPrice()];
+        auto& bookSide = (incoming->getSide() == OrderSide::BUY) ? bids : asks;
+        auto& priceLevel = bookSide[incoming->getPrice()];
         
         if (priceLevel.empty()) {
             priceLevel.reserve(PRICE_LEVEL_CAPACITY);
         }
         
         priceLevel.push_back(incoming);
-        orderIndex[incoming.getId()] = &priceLevel.back();
+        orderIndex[incoming->getId()] = incoming;
+    } else {
+        orderPool.release(incoming); // Release back to pool if fully filled or not to be
     }
 }
 
@@ -47,7 +52,7 @@ inline bool OrderBook::canFillOrder(const Order& order) const {
                 break;
             }
             for (const auto& resting : orders) {
-                remainingQty -= resting.getRemaining();
+                remainingQty -= resting->getRemaining();
                 if (remainingQty <= 0) return true;
             }
         }
@@ -57,7 +62,7 @@ inline bool OrderBook::canFillOrder(const Order& order) const {
                 break;
             }
             for (const auto& resting : it->second) {
-                remainingQty -= resting.getRemaining();
+                remainingQty -= resting->getRemaining();
                 if (remainingQty <= 0) return true;
             }
         }
@@ -80,7 +85,7 @@ void OrderBook::cancelOrder(int orderId) {
         auto& orders = priceIt->second;
         orders.erase(
             std::remove_if(orders.begin(), orders.end(),
-                [orderId](const Order& o) { return o.getId() == orderId; }),
+                [orderId](const Order* o) { return o->getId() == orderId; }),
             orders.end()
         );
 
@@ -88,7 +93,7 @@ void OrderBook::cancelOrder(int orderId) {
             bookSide.erase(priceIt);
         }
     }
-
+    orderPool.release(order);
     orderIndex.erase(orderId);
 }
 
@@ -97,17 +102,18 @@ void OrderBook::removeExpiredOrders(PriceMap& side) {
         auto& orders = it->second;
         orders.erase(
             std::remove_if(orders.begin(), orders.end(),
-                [this](const Order& o) { 
-                    if (isOrderExpired(o)) {
-                        orderIndex.erase(o.getId());
+                [this](Order* o) {
+                    if (isOrderExpired(*o)) {
+                        orderIndex.erase(o->getId());
+                        orderPool.release(o);
                         return true;
                     }
                     return false;
                 }
             ),
-            orders.end()
+                orders.end()
         );
-        
+
         if (orders.empty()) {
             it = side.erase(it);
         } else {
@@ -142,7 +148,7 @@ void OrderBook::printBook(int depth) const {
         if (bidIt != bids.rend()) {
             int bidQty = 0;
             for (const auto& order : bidIt->second) {
-                bidQty += order.getRemaining();
+                bidQty += order->getRemaining();
             }
             std::cout << std::fixed << std::setprecision(2) 
                      << std::setw(8) << bidQty << " @ " 
@@ -158,7 +164,7 @@ void OrderBook::printBook(int depth) const {
         if (askIt != asks.end()) {
             int askQty = 0;
             for (const auto& order : askIt->second) {
-                askQty += order.getRemaining();
+                askQty += order->getRemaining();
             }
             std::cout << std::fixed << std::setprecision(2)
                      << std::setw(8) << askQty << " @ " 
@@ -183,12 +189,12 @@ void OrderBook::matchBids(Order& order) {
         auto& orders = it->second;
         for (auto& resting : orders) {
             if (__builtin_expect(order.getRemaining() == 0, 0)) break;
-            executeMatch(order, resting);
+            executeMatch(order, *resting);
         }
 
         orders.erase(
             std::remove_if(orders.begin(), orders.end(),
-                [](const Order& o) { return o.getRemaining() == 0; }),
+                [](const Order* o) { return o->getRemaining() == 0; }),
             orders.end()
         );
 
@@ -210,12 +216,12 @@ void OrderBook::matchAsks(Order& order) {
         auto& orders = it->second;
         for (auto& resting : orders) {
             if (__builtin_expect(order.getRemaining() == 0, 0)) break;
-            executeMatch(order, resting);
+            executeMatch(order, *resting);
         }
 
         orders.erase(
             std::remove_if(orders.begin(), orders.end(),
-                [](const Order& o) { return o.getRemaining() == 0; }),
+                [](const Order* o) { return o->getRemaining() == 0; }),
             orders.end()
         );
 
@@ -255,26 +261,26 @@ void OrderBook::saveOrdersToFile(const std::string& filename) const {
     // Save all orders from bids
     for (const auto& [price, orders] : bids) {
         for (const auto& order : orders) {
-            file << order.getId() << ","
-                 << static_cast<int>(order.getType()) << ","
-                 << static_cast<int>(order.getSide()) << ","
-                 << std::fixed << std::setprecision(4) << order.getPrice() << ","
-                 << order.getQuantity() << ","
-                 << order.getRemaining() << ","
-                 << order.getTimestamp() << "\n";
+            file << order->getId() << ","
+                 << static_cast<int>(order->getType()) << ","
+                 << static_cast<int>(order->getSide()) << ","
+                 << std::fixed << std::setprecision(4) << order->getPrice() << ","
+                 << order->getQuantity() << ","
+                 << order->getRemaining() << ","
+                 << order->getTimestamp() << "\n";
         }
     }
 
     // Save all orders from asks
     for (const auto& [price, orders] : asks) {
         for (const auto& order : orders) {
-            file << order.getId() << ","
-                 << static_cast<int>(order.getType()) << ","
-                 << static_cast<int>(order.getSide()) << ","
-                 << std::fixed << std::setprecision(4) << order.getPrice() << ","
-                 << order.getQuantity() << ","
-                 << order.getRemaining() << ","
-                 << order.getTimestamp() << "\n";
+            file << order->getId() << ","
+                 << static_cast<int>(order->getType()) << ","
+                 << static_cast<int>(order->getSide()) << ","
+                 << std::fixed << std::setprecision(4) << order->getPrice() << ","
+                 << order->getQuantity() << ","
+                 << order->getRemaining() << ","
+                 << order->getTimestamp() << "\n";
         }
     }
 
@@ -316,10 +322,10 @@ void OrderBook::loadOrdersFromFile(const std::string& filename) {
             int quantity = std::stoi(tokens[4]);
             int remaining = std::stoi(tokens[5]);
             int64_t timestamp = std::stoll(tokens[6]);
-
+            Order* order = orderPool.acquire();
+            *order = Order(id, type, side, price, quantity, timestamp);
             // Create order and add to book
-            Order order(id, type, side, price, quantity, timestamp);
-            order.setRemaining(remaining);
+            order->setRemaining(remaining);
 
             // Add to appropriate side
             auto& bookSide = (side == OrderSide::BUY) ? bids : asks;
@@ -330,7 +336,7 @@ void OrderBook::loadOrdersFromFile(const std::string& filename) {
             }
             
             priceLevel.push_back(order);
-            orderIndex[id] = &priceLevel.back();
+            orderIndex[id] = order;
             loadedOrders++;
         }
         catch (const std::exception& e) {

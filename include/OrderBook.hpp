@@ -41,7 +41,7 @@ public:
     bool hasAsks() const { return !asks.empty(); }
 
 private:
-    using PriceMap = map<double, vector<Order>>;
+    using PriceMap = map<double, vector<Order*>>;
     PriceMap bids;
     PriceMap asks;
     unordered_map<int, Order*> orderIndex;

@@ -36,7 +36,14 @@ void OrderBook::addOrder(const Order& order) {
             priceLevel.reserve(PRICE_LEVEL_CAPACITY);
         }
         
-        priceLevel.push_back(incoming);
+        // Insert order to maintain time priority (FIFO within price level)
+        // Find the correct position based on timestamp (earlier timestamp = higher priority)
+        auto insertPos = std::lower_bound(priceLevel.begin(), priceLevel.end(), incoming,
+            [](const Order* a, const Order* b) {
+                return a->getTimestamp() < b->getTimestamp();
+            });
+        
+        priceLevel.insert(insertPos, incoming);
         orderIndex[incoming->getId()] = incoming;
     } else {
         orderPool.release(incoming); // Release back to pool if fully filled or not to be
@@ -187,6 +194,7 @@ void OrderBook::matchBids(Order& order) {
         }
 
         auto& orders = it->second;
+        // Process orders in time priority (FIFO) - they're already sorted by timestamp
         for (auto& resting : orders) {
             if (__builtin_expect(order.getRemaining() == 0, 0)) break;
             executeMatch(order, *resting);
@@ -214,6 +222,7 @@ void OrderBook::matchAsks(Order& order) {
         }
 
         auto& orders = it->second;
+        // Process orders in time priority (FIFO) - they're already sorted by timestamp
         for (auto& resting : orders) {
             if (__builtin_expect(order.getRemaining() == 0, 0)) break;
             executeMatch(order, *resting);
@@ -332,10 +341,16 @@ void OrderBook::loadOrdersFromFile(const std::string& filename) {
             auto& priceLevel = bookSide[price];
             
             if (priceLevel.empty()) {
-                priceLevel.reserve(32);
+                priceLevel.reserve(PRICE_LEVEL_CAPACITY);
             }
             
-            priceLevel.push_back(order);
+            // Insert order to maintain time priority (FIFO within price level)
+            auto insertPos = std::lower_bound(priceLevel.begin(), priceLevel.end(), order,
+                [](const Order* a, const Order* b) {
+                    return a->getTimestamp() < b->getTimestamp();
+                });
+            
+            priceLevel.insert(insertPos, order);
             orderIndex[id] = order;
             loadedOrders++;
         }

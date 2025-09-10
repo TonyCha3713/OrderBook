@@ -10,19 +10,6 @@ A production-grade C++ limit order book implementing exchange-standard price-tim
 - **Zero packet loss**: Reliable processing under extreme loads
 - **Memory efficient**: Zero-copy memory pooling using pre-allocated orders
 
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Architecture](#architecture)
-- [Implementation Details](#implementation-details)
-- [Performance Benchmarks](#performance-benchmarks)
-- [Installation & Usage](#installation--usage)
-- [API Reference](#api-reference)
-- [Testing](#testing)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## 🎯 Overview
 
 This OrderBook matching engine is designed for high-frequency trading applications, implementing industry-standard price-time priority matching with deterministic execution guarantees. The system supports multiple order types and provides comprehensive performance monitoring and state persistence.

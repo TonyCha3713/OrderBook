@@ -8,7 +8,7 @@ A production-grade C++ limit order book implementing exchange-standard price-tim
 - **High throughput**: 2.5M+ orders/second peak performance
 - **Consistent performance**: 99th percentile latency under 14μs
 - **Zero packet loss**: Reliable processing under extreme loads
-- **Memory efficient**: Zero-copy memory pooling with 4,096 pre-allocated orders
+- **Memory efficient**: Zero-copy memory pooling using pre-allocated orders
 
 ## 📋 Table of Contents
 
@@ -142,24 +142,11 @@ inline void executeMatch(Order& incoming, Order& resting)
 - Make build system
 - Linux/macOS (tested on Ubuntu 20.04+ and macOS 12+)
 
-### Build Instructions
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/orderbook.git
-cd orderbook
-
-# Build the project
-make clean && make
-
-# Run the main program
-./orderbook
-
-# Run performance benchmarks
-./benchmark
-```
-
 ### Quick Start
 ```bash
+#Build the project
+make clean && make
+
 # Start the order book
 ./orderbook
 
@@ -227,17 +214,6 @@ enum class OrderType {
 - **Stress tests**: System behavior under extreme loads
 - **Real data tests**: Processing actual market data
 
-### Benchmark Output
-```
-=== ENHANCED ORDERBOOK PERFORMANCE BENCHMARK SUITE ===
-🔬 MICRO-BENCHMARKS
-===================
-=== MICRO-BENCHMARK: Single Order Latency Test ===
-Iterations: 10000
-Average: 5.90 μs
-P50: 6.33 μs, P95: 11.54 μs, P99: 14.00 μs
-10μs Target: ✅ PASSED
-```
 
 ## 📁 Project Structure
 
@@ -254,9 +230,6 @@ OrderBook/
 │   ├── OrderPool.cpp       # Memory pool implementation
 │   ├── Server.cpp          # Server implementation
 │   └── utils.cpp           # Utility implementations
-├── dataset/                # Sample market data
-│   ├── AAPL_cleaned.csv    # Processed Apple stock data
-│   └── LOBSTER_APPL-1.csv  # Raw LOBSTER data
 ├── benchmark.cpp           # Performance benchmarking
 ├── main.cpp               # Main application
 ├── makefile               # Build configuration
@@ -280,28 +253,3 @@ OrderBook/
 - **Research**: Algorithm development and testing
 - **Benchmarking**: Performance comparison studies
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-### Development Guidelines
-1. Follow C++17 standards
-2. Maintain performance benchmarks
-3. Add comprehensive tests for new features
-4. Update documentation for API changes
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **LOBSTER** for providing high-quality market data
-- **C++ community** for performance optimization techniques
-- **Trading industry** for exchange-standard specifications
-
----
-
-**Built with ❤️ for high-frequency trading applications**
-
-*For questions or support, please open an issue on GitHub.*

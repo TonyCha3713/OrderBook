@@ -12,13 +12,12 @@ void exportTradesToCSV(const vector<Log>& trades, const string& filename) {
     }
     infile.close();
 
-    ofstream file(filename, ios::app); // Open in append mode
+    ofstream file(filename, ios::app); 
     if (!file.is_open()) {
         cerr << "Failed to open file: " << filename << "\n";
         return;
     }
 
-    // Write header only if file was empty
     if (writeHeader) {
         file << "BuyOrderID,SellOrderID,Price,Quantity,Timestamp\n";
     }

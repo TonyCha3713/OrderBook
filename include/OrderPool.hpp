@@ -10,7 +10,7 @@ private:
     void grow();
 
 public:
-    static constexpr size_t DEFAULT_CAPACITY = 10000;  // Increased for better performance
+    static constexpr size_t DEFAULT_CAPACITY = 10000;  
     static constexpr size_t MAX_CAPACITY = 10000000;
 
     explicit OrderPool(size_t capacity = DEFAULT_CAPACITY);

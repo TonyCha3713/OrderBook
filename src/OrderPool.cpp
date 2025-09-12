@@ -13,7 +13,7 @@ OrderPool::OrderPool(size_t capacity) {
 Order* OrderPool::acquire() {
     if (freeList.empty()) {
         grow();
-        if (freeList.empty()) return nullptr; // Still empty after grow
+        if (freeList.empty()) return nullptr; 
     }
     int index = freeList.top();
     freeList.pop();
@@ -36,12 +36,12 @@ void OrderPool::release(Order* order) {
  
 void OrderPool::grow() {
     size_t current = pool.size();
-    size_t additional = current / 2;  // grow by 50%
-    if (additional < 1024) additional = 1024;  // minimum growth
+    size_t additional = current / 2;  
+    if (additional < 1024) additional = 1024;  
     size_t newSize = current + additional;
     if (newSize > MAX_CAPACITY) {
         newSize = MAX_CAPACITY;
-        if (newSize <= current) return;  // Can't grow further
+        if (newSize <= current) return;  
     }
 
     pool.resize(newSize);

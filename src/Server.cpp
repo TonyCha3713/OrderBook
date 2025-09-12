@@ -11,7 +11,6 @@ void OrderServer::processNextOrder() {
         orderQueue.pop();
     }
 
-    // Create and validate order
     Order order(
         nextOrderId++,
         request.type,

@@ -9,7 +9,7 @@
 class OrderServer {
 public:
     struct OrderRequest {
-        OrderType type;     // Use existing OrderType enum
+        OrderType type;     
         OrderSide side;
         double price;
         int quantity;
@@ -32,7 +32,6 @@ public:
         cv.notify_one();
     }
 
-    // Order book persistence methods
     void saveOrderBook(const std::string& filename) {
         std::lock_guard<std::mutex> lock(mutex);
         book.saveOrdersToFile(filename);
